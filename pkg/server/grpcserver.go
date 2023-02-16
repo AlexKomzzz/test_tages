@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	fileDir = "./srvDir/"
+	fileDir = "./pkg/server/srvDir/"
 )
 
 type GRPCserver struct {
@@ -26,15 +26,25 @@ func NewGRPCServer() *GRPCserver {
 
 // Получение файла от клиента
 func (s *GRPCserver) SendFile(ctx context.Context, fileData *api.File) (*empty.Empty, error) {
+	fileName := fmt.Sprintf("%s%s", fileDir, fileData.Filename)
 
-	// сохраняем полученный файл в директории
-	err := os.WriteFile(fmt.Sprintf("%s%s", fileDir, fileData.Filename), fileData.Data, 0)
+	file, err := os.Create(fileName)
 	if err != nil {
-		logrus.Println("error SendFile/WriteFile: ", err)
+		logrus.Println("error SendFile/Create: ", err)
 		return nil, err
 	}
 
-	return nil, nil
+	defer file.Close()
+
+	// сохраняем полученный файл в директории
+	_, err = file.Write(fileData.Data)
+	// err := os.WriteFile(fmt.Sprintf("%s%s", fileDir, fileData.Filename), fileData.Data, 0)
+	if err != nil {
+		logrus.Println("error SendFile/Write: ", err)
+		return nil, err
+	}
+	var res empty.Empty
+	return &res, nil
 }
 
 // Отправка списка файлов
@@ -47,6 +57,10 @@ func (s *GRPCserver) GetListFiles(ctx context.Context, empty *empty.Empty) (*api
 		return nil, err
 	}
 
+	if len(files) == 0 {
+		return nil, errors.New("files not found")
+	}
+
 	for _, file := range files {
 
 		// время создания и изменения файла
@@ -55,14 +69,17 @@ func (s *GRPCserver) GetListFiles(ctx context.Context, empty *empty.Empty) (*api
 			logrus.Println("error GetListFiles/times.Stat: ", err)
 			return nil, err
 		}
-		// if t.HasBirthTime() {
-		// 	log.Println(t.BirthTime())
-		// }
+		if !t.HasBirthTime() {
+			logrus.Println("отсутствует время создания файла")
+			infoFile := fmt.Sprintf("%s | %v | %v", file.Name(), "NULL", t.ModTime().Format("2006-01-02 15:04:05"))
+			result = append(result, infoFile)
+		} else {
 
-		// время изменения можно получить из fileInfo
+			// время изменения можно получить из fileInfo
 
-		infoFile := fmt.Sprintf("%s | %v | %v", file.Name(), t.BirthTime(), t.ModTime())
-		result = append(result, infoFile)
+			infoFile := fmt.Sprintf("%s | %v | %v", file.Name(), t.BirthTime(), t.ModTime().Format("2006-01-02 15:04:05"))
+			result = append(result, infoFile)
+		}
 	}
 
 	return &api.ListFiles{Files: result}, nil

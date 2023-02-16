@@ -9,14 +9,14 @@ import (
 	"strings"
 
 	"github.com/AlexKomzzz/test_tages/pkg/api"
-	"github.com/sirupsen/logrus"
+	"github.com/golang/protobuf/ptypes/empty"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
 const (
 	clntPort = ":8080"
-	clDir    = "./cl_dir/" // директория, в которой хранятся файлы клиента
+	clDir    = "./cmd/client/cl_dir/" // директория, в которой хранятся файлы клиента
 )
 
 func main() {
@@ -43,16 +43,19 @@ func main() {
 		request := strings.Split(string(req), " ")
 
 		if len(request) < 2 {
-			log.Fatal("not enough arguments")
+			fmt.Println("not enough arguments")
+			continue
 		}
 
 		switch {
 		case request[0] == "send": // если запрос send значит вызываем метод загрузки файла. Дальше указывается имя файла
 
-			var fileName string
 			// считываем название файла
-			for i := 1; i < len(request); i++ {
-				fileName = fmt.Sprint(fileName, " ", request[i])
+			fileName := request[1]
+			if len(request) > 2 {
+				for i := 2; i < len(request); i++ {
+					fileName = fmt.Sprint(fileName, " ", request[i])
+				}
 			}
 
 			// открываем файл в клиентской директории
@@ -69,26 +72,34 @@ func main() {
 
 			_, err = client.SendFile(context.Background(), fileSend)
 			if err != nil {
-				log.Fatal("Client: error SendFile: ", err)
+				fmt.Println(err)
+				continue
 			}
 
 			fmt.Println("file sent!")
 
 		case request[0] == "list" && request[1] == "files": // если запрос list files значит вызываем метод передачи списка всех файлов
-
-			res, err := client.GetListFiles(context.Background(), nil)
+			var req empty.Empty
+			res, err := client.GetListFiles(context.Background(), &req)
 			if err != nil {
-				logrus.Fatal("Client: error GetListFiles: ", err)
+				fmt.Println(err)
+				continue
 			}
 
-			fmt.Println(res.GetFiles())
+			list := res.GetFiles()
+
+			for _, fInf := range list {
+
+				fmt.Println(fInf)
+			}
 
 		case request[0] == "get": // если запрос file значит вызываем метод передачи файла. Дальше указывается имя файла
 
-			var fileName string
-			// считываем название файла
-			for i := 1; i < len(request); i++ {
-				fileName = fmt.Sprint(fileName, " ", request[i])
+			fileName := request[1]
+			if len(request) > 2 {
+				for i := 2; i < len(request); i++ {
+					fileName = fmt.Sprint(fileName, " ", request[i])
+				}
 			}
 
 			req := &api.Req{
@@ -97,28 +108,34 @@ func main() {
 
 			res, err := client.GetFile(context.Background(), req)
 			if err != nil {
-				logrus.Fatal("Client: error GetFile: ", err)
+				fmt.Println(err)
+				continue
 			}
 
 			// полученный файл
 			receivedFile := res.GetData()
-			// сохранить в дир
-			// newFile, err := os.Create(fmt.Sprintf("%s%s", clDir, fileName))
-			// if err != nil {
-			// 	fmt.Println("error: ", err)
-			// 	fmt.Println("Repeat, pls")
-			// 	continue
-			// }
 
-			err = os.WriteFile(fmt.Sprintf("%s%s", clDir, fileName), receivedFile, 0)
+			// сохранить в дир
+			newFile, err := os.Create(fmt.Sprintf("%s%s", clDir, fileName))
 			if err != nil {
 				fmt.Println("error: ", err)
 				fmt.Println("Repeat, pls")
 				continue
 			}
 
-			fmt.Println("file received!")
+			// сохраняем полученный файл в директории
+			_, err = newFile.Write(receivedFile)
+			// err = os.WriteFile(fmt.Sprintf("%s%s", clDir, fileName), receivedFile, 0)
+			if err != nil {
+				fmt.Println("error: ", err)
+				fmt.Println("Repeat, pls")
+				newFile.Close()
+				continue
+			}
 
+			newFile.Close()
+			fmt.Println("file received!")
 		}
+
 	}
 }

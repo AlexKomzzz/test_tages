@@ -5,7 +5,7 @@ import (
 	"net"
 
 	"github.com/AlexKomzzz/test_tages/pkg/api"
-	"github.com/AlexKomzzz/test_tages/pkg/libraryserver"
+	libraryserver "github.com/AlexKomzzz/test_tages/pkg/server"
 	"google.golang.org/grpc"
 )
 
