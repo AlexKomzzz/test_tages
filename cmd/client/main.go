@@ -16,6 +16,7 @@ import (
 
 const (
 	clntPort = ":8080"
+	clDir    = "./cl_dir/" // директория, в которой хранятся файлы клиента
 )
 
 func main() {
@@ -46,16 +47,42 @@ func main() {
 		}
 
 		switch {
+		case request[0] == "send": // если запрос send значит вызываем метод загрузки файла. Дальше указывается имя файла
+
+			var fileName string
+			// считываем название файла
+			for i := 1; i < len(request); i++ {
+				fileName = fmt.Sprint(fileName, " ", request[i])
+			}
+
+			// открываем файл в клиентской директории
+			dataSend, err := os.ReadFile(fmt.Sprintf("%s%s", clDir, fileName))
+			if err != nil {
+				fmt.Println("error: ", err)
+				continue
+			}
+
+			fileSend := &api.File{
+				Data: dataSend,
+			}
+
+			_, err = client.SendFile(context.Background(), fileSend)
+			if err != nil {
+				log.Fatal("Client: error SendFile: ", err)
+			}
+
+			fmt.Println("file sent!")
+
 		case request[0] == "list" && request[1] == "files": // если запрос list files значит вызываем метод передачи списка всех файлов
 
-			res, err := client.GetListFiles(context.Background(), &api.Nil{})
+			res, err := client.GetListFiles(context.Background(), nil)
 			if err != nil {
 				logrus.Fatal("Client: error GetListFiles: ", err)
 			}
 
 			fmt.Println(res.GetFiles())
 
-		case request[0] == "file": // если запрос file значит вызываем метод передачи файла. Длаьше указывается имя файла
+		case request[0] == "get": // если запрос file значит вызываем метод передачи файла. Дальше указывается имя файла
 
 			var fileName string
 			// считываем название файла
@@ -69,12 +96,28 @@ func main() {
 
 			res, err := client.GetFile(context.Background(), req)
 			if err != nil {
-				log.Fatal("Client: error GetFile: ", err)
+				logrus.Fatal("Client: error GetFile: ", err)
 			}
-			fmt.Println(res.GetData())
+
 			// полученный файл
-			// file := res.GetData()
+			receivedFile := res.GetData()
 			// сохранить в дир
+			// newFile, err := os.Create(fmt.Sprintf("%s%s", clDir, fileName))
+			// if err != nil {
+			// 	fmt.Println("error: ", err)
+			// 	fmt.Println("Repeat, pls")
+			// 	continue
+			// }
+
+			err = os.WriteFile(fmt.Sprintf("%s%s", clDir, fileName), receivedFile, 0)
+			if err != nil {
+				fmt.Println("error: ", err)
+				fmt.Println("Repeat, pls")
+				continue
+			}
+
+			fmt.Println("file received!")
+
 		}
 	}
 }

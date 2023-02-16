@@ -8,6 +8,7 @@ package api
 
 import (
 	context "context"
+	empty "github.com/golang/protobuf/ptypes/empty"
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
@@ -22,8 +23,8 @@ const _ = grpc.SupportPackageIsVersion7
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type FileStorageClient interface {
-	SendFile(ctx context.Context, in *File, opts ...grpc.CallOption) (*Resp, error)
-	GetListFiles(ctx context.Context, in *Nil, opts ...grpc.CallOption) (*ListFiles, error)
+	SendFile(ctx context.Context, in *File, opts ...grpc.CallOption) (*empty.Empty, error)
+	GetListFiles(ctx context.Context, in *empty.Empty, opts ...grpc.CallOption) (*ListFiles, error)
 	GetFile(ctx context.Context, in *Req, opts ...grpc.CallOption) (*File, error)
 }
 
@@ -35,8 +36,8 @@ func NewFileStorageClient(cc grpc.ClientConnInterface) FileStorageClient {
 	return &fileStorageClient{cc}
 }
 
-func (c *fileStorageClient) SendFile(ctx context.Context, in *File, opts ...grpc.CallOption) (*Resp, error) {
-	out := new(Resp)
+func (c *fileStorageClient) SendFile(ctx context.Context, in *File, opts ...grpc.CallOption) (*empty.Empty, error) {
+	out := new(empty.Empty)
 	err := c.cc.Invoke(ctx, "/api.FileStorage/SendFile", in, out, opts...)
 	if err != nil {
 		return nil, err
@@ -44,7 +45,7 @@ func (c *fileStorageClient) SendFile(ctx context.Context, in *File, opts ...grpc
 	return out, nil
 }
 
-func (c *fileStorageClient) GetListFiles(ctx context.Context, in *Nil, opts ...grpc.CallOption) (*ListFiles, error) {
+func (c *fileStorageClient) GetListFiles(ctx context.Context, in *empty.Empty, opts ...grpc.CallOption) (*ListFiles, error) {
 	out := new(ListFiles)
 	err := c.cc.Invoke(ctx, "/api.FileStorage/GetListFiles", in, out, opts...)
 	if err != nil {
@@ -66,8 +67,8 @@ func (c *fileStorageClient) GetFile(ctx context.Context, in *Req, opts ...grpc.C
 // All implementations must embed UnimplementedFileStorageServer
 // for forward compatibility
 type FileStorageServer interface {
-	SendFile(context.Context, *File) (*Resp, error)
-	GetListFiles(context.Context, *Nil) (*ListFiles, error)
+	SendFile(context.Context, *File) (*empty.Empty, error)
+	GetListFiles(context.Context, *empty.Empty) (*ListFiles, error)
 	GetFile(context.Context, *Req) (*File, error)
 	mustEmbedUnimplementedFileStorageServer()
 }
@@ -76,10 +77,10 @@ type FileStorageServer interface {
 type UnimplementedFileStorageServer struct {
 }
 
-func (UnimplementedFileStorageServer) SendFile(context.Context, *File) (*Resp, error) {
+func (UnimplementedFileStorageServer) SendFile(context.Context, *File) (*empty.Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SendFile not implemented")
 }
-func (UnimplementedFileStorageServer) GetListFiles(context.Context, *Nil) (*ListFiles, error) {
+func (UnimplementedFileStorageServer) GetListFiles(context.Context, *empty.Empty) (*ListFiles, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetListFiles not implemented")
 }
 func (UnimplementedFileStorageServer) GetFile(context.Context, *Req) (*File, error) {
@@ -117,7 +118,7 @@ func _FileStorage_SendFile_Handler(srv interface{}, ctx context.Context, dec fun
 }
 
 func _FileStorage_GetListFiles_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(Nil)
+	in := new(empty.Empty)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -129,7 +130,7 @@ func _FileStorage_GetListFiles_Handler(srv interface{}, ctx context.Context, dec
 		FullMethod: "/api.FileStorage/GetListFiles",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(FileStorageServer).GetListFiles(ctx, req.(*Nil))
+		return srv.(FileStorageServer).GetListFiles(ctx, req.(*empty.Empty))
 	}
 	return interceptor(ctx, in, info, handler)
 }

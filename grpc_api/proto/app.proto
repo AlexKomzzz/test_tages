@@ -2,32 +2,25 @@ syntax = "proto3";
 
 package api;
 
+import "google/protobuf/empty.proto";
+
 option go_package = "./pkg/api";
 
 service FileStorage {
-    rpc SendFile(File) returns (Resp) {}
-    rpc GetListFiles(Nil) returns (ListFiles) {}
+    rpc SendFile(File) returns (google.protobuf.Empty) {}
+    rpc GetListFiles(google.protobuf.Empty) returns (ListFiles) {}
     rpc GetFile(Req) returns (File) {}
 }
 
 message File {
     bytes data = 1;
+    string filename = 2;
 }
 
 message ListFiles {
     repeated string files = 1;
 }
 
-message Resp {
-    int32 code = 1;
-    string status = 2;
-}
-
 message Req {
-    string filename = 1;
-}
-
-// заменить
-message Nil {
     string filename = 1;
 }
