@@ -14,14 +14,24 @@ import (
 
 const (
 	fileDir = "./pkg/server/srvDir/"
+	limUp   = 10
+	limDown = 2
+	limView = 100
 )
 
 type GRPCserver struct {
 	api.UnimplementedFileStorageServer
+	limUpFile   chan struct{} // семафор на ограничение загрузки файлов
+	limDownFile chan struct{} // семафор на ограничение скачиваний файлов
+	limViewFile chan struct{} // семафор на ограничение просмотра списка файлов
 }
 
 func NewGRPCServer() *GRPCserver {
-	return &GRPCserver{}
+	return &GRPCserver{
+		limUpFile:   make(chan struct{}, limUp),
+		limDownFile: make(chan struct{}, limDown),
+		limViewFile: make(chan struct{}, limView),
+	}
 }
 
 // Получение файла от клиента
@@ -89,34 +99,56 @@ func (s *GRPCserver) GetFile(ctx context.Context, fileName *api.Req) (*api.File,
 
 	// для ограничения подключений реализовать счетчик работающих горутин на передачу файлов
 	// ожидать, если кол-во больше 9
-	// можно в структуре s иметь канал с буфером 9
+	// можно в структуре s иметь канал с буфером 10
 	// здесь перед запуском горутины на передачу файла записывать пустую структуру в канал, если он переполнен,
 	// то текущая горутина будет заблокирована до завершения какой-либо работающей
 
 	// После запершения горутины (которая отправит файл) вычитаем из канала одну структуру, как сигнал о завершении
 
-	// получаем имя файла, находим его в директории и возвращаем его
-
-	// result := make([]byte, 0)
-
 	filename := fmt.Sprintf("%s%s", fileDir, fileName.Filename)
+
+	chRes := make(chan []byte)
+	chErr := make(chan error)
+
+	s.limDownFile <- struct{}{}                         // блокирует, если уже запущено 10 горутин
+	logrus.Println("len semafor: ", len(s.limDownFile)) // тестовая
+
+	go getFile(chRes, filename, chErr)
+	defer func() {
+		<-s.limDownFile
+	}()
+
+	select {
+	case dataFile := <-chRes:
+		return &api.File{Data: dataFile}, nil
+	case err := <-chErr:
+		return nil, err
+	}
+}
+
+func getFile(chRes chan<- []byte, filename string, chErr chan<- error) {
 
 	_, err := os.Stat(filename)
 	if err != nil {
 		if os.IsNotExist(err) {
 			logrus.Println("file does not exist") // это_true
-			return nil, errors.New("file does not exist")
+			chErr <- errors.New("file does not exist")
+			return
 		} else {
 			logrus.Println("error GetFile/Stat: ", err)
-			return nil, err
+			chErr <- err
+			return
 		}
 	}
 
 	dataFile, err := os.ReadFile(filename)
 	if err != nil {
 		logrus.Println("error GetFile/ReadFile: ", err)
-		return nil, err
+		chErr <- err
+		return
 	}
 
-	return &api.File{Data: dataFile}, nil
+	// time.Sleep(time.Second * 10) // для отладки
+
+	chRes <- dataFile
 }
