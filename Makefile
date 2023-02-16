@@ -1,5 +1,5 @@
 protoc:
-	protoc -I=grpc_api/proto --go_out=. --go-grpc_out=. grpc_api/proto/library.proto
+	protoc -I=grpc_api/proto --go_out=. --go-grpc_out=. grpc_api/proto/app.proto
 
 rm:
 	rm ./pkg/api/*.go

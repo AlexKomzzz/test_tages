@@ -8,22 +8,30 @@ import (
 	"os"
 	"strings"
 
-	"github.com/AlexKomzzz/library-app/pkg/api"
+	"github.com/AlexKomzzz/test_tages/pkg/api"
+	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
+const (
+	clntPort = ":8080"
+)
+
 func main() {
-	conn, err := grpc.Dial(":8080", grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.Dial(clntPort, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Fatal("error connect client: ", err)
 	}
 
 	defer conn.Close()
 
-	client := api.NewLibraryClient(conn)
+	client := api.NewFileStorageClient(conn)
 
 	for {
+
+		// запросы из командной строки
+
 		in := bufio.NewReader(os.Stdin)
 
 		req, _, err := in.ReadLine()
@@ -38,36 +46,35 @@ func main() {
 		}
 
 		switch {
-		case request[0] == "book": // если первое слово book значит вызываем метод поиска автора по книге
-			nameBook := request[1]
-			// считываем название книги
-			for i := 2; i < len(request); i++ {
-				nameBook = fmt.Sprint(nameBook, " ", request[i])
-			}
+		case request[0] == "list" && request[1] == "files": // если запрос list files значит вызываем метод передачи списка всех файлов
 
-			book := &api.Book{
-				Title: nameBook,
-			}
-
-			res, err := client.SearchAuthor(context.Background(), book)
+			res, err := client.GetListFiles(context.Background(), &api.Nil{})
 			if err != nil {
-				log.Fatal("error seachAuthor: ", err)
+				logrus.Fatal("Client: error GetListFiles: ", err)
 			}
 
-			fmt.Println(res.GetAuthors())
+			fmt.Println(res.GetFiles())
 
-		case request[0] == "author":
+		case request[0] == "file": // если запрос file значит вызываем метод передачи файла. Длаьше указывается имя файла
 
-			author := &api.Author{
-				Name: request[1],
+			var fileName string
+			// считываем название файла
+			for i := 1; i < len(request); i++ {
+				fileName = fmt.Sprint(fileName, " ", request[i])
 			}
 
-			res, err := client.SearchBook(context.Background(), author)
+			req := &api.Req{
+				Filename: fileName,
+			}
+
+			res, err := client.GetFile(context.Background(), req)
 			if err != nil {
-				log.Fatal("error searchBook: ", err)
+				log.Fatal("Client: error GetFile: ", err)
 			}
-
-			fmt.Println(res.GetBooks())
+			fmt.Println(res.GetData())
+			// полученный файл
+			// file := res.GetData()
+			// сохранить в дир
 		}
 	}
 }

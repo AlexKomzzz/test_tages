@@ -4,29 +4,25 @@ import (
 	"log"
 	"net"
 
-	"github.com/AlexKomzzz/library-app/pkg/api"
-	"github.com/AlexKomzzz/library-app/pkg/libraryserver"
-	"github.com/AlexKomzzz/library-app/pkg/repository"
+	"github.com/AlexKomzzz/test_tages/pkg/api"
+	"github.com/AlexKomzzz/test_tages/pkg/libraryserver"
 	"google.golang.org/grpc"
+)
+
+const (
+	srvPort = ":8080"
 )
 
 func main() {
 
-	// подключение в БД MySQL
-	db, err := repository.NewMysqlDB()
-	if err != nil {
-		log.Fatal("failed to initialize db: ", err)
-	}
-	defer db.Close()
-
-	lis, err := net.Listen("tcp", ":8080")
+	lis, err := net.Listen("tcp", srvPort)
 	if err != nil {
 		log.Fatal("failed to listen: ", err)
 	}
 
-	srv := libraryserver.NewGRPCServer(db)
+	srv := libraryserver.NewGRPCServer()
 	s := grpc.NewServer()
-	api.RegisterLibraryServer(s, srv)
+	api.RegisterFileStorageServer(s, srv)
 
 	if err := s.Serve(lis); err != nil {
 		log.Fatal("failed to serve: ", err)

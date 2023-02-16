@@ -1,10 +1,9 @@
-module github.com/AlexKomzzz/test_tages.git
+module github.com/AlexKomzzz/test_tages
 
 go 1.19
 
 require (
-	github.com/AlexKomzzz/library-app v0.0.0-20220917220253-ba7ffc558d32
-	github.com/go-sql-driver/mysql v1.7.0
+	github.com/sirupsen/logrus v1.9.0
 	google.golang.org/grpc v1.53.0
 	google.golang.org/protobuf v1.28.1
 )
