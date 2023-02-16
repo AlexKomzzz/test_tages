@@ -2,6 +2,7 @@ package libraryserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 
@@ -12,7 +13,7 @@ import (
 )
 
 const (
-	fileDir = "./srvDir"
+	fileDir = "./srvDir/"
 )
 
 type GRPCserver struct {
@@ -27,11 +28,11 @@ func NewGRPCServer() *GRPCserver {
 func (s *GRPCserver) SendFile(ctx context.Context, fileData *api.File) (*empty.Empty, error) {
 
 	// сохраняем полученный файл в директории
-	// err := os.WriteFile(fmt.Sprintf("%s%s", clDir, fileName), receivedFile, 0)
-	// if err != nil {
-	// 	logrus.Println("error SendFile/WriteFile: ", err)
-	// 	return nil, err
-	// }
+	err := os.WriteFile(fmt.Sprintf("%s%s", fileDir, fileData.Filename), fileData.Data, 0)
+	if err != nil {
+		logrus.Println("error SendFile/WriteFile: ", err)
+		return nil, err
+	}
 
 	return nil, nil
 }
@@ -79,7 +80,26 @@ func (s *GRPCserver) GetFile(ctx context.Context, fileName *api.Req) (*api.File,
 
 	// получаем имя файла, находим его в директории и возвращаем его
 
-	result := make([]byte, 0)
+	// result := make([]byte, 0)
 
-	return &api.File{Data: result}, nil
+	filename := fmt.Sprintf("%s%s", fileDir, fileName.Filename)
+
+	_, err := os.Stat(filename)
+	if err != nil {
+		if os.IsNotExist(err) {
+			logrus.Println("file does not exist") // это_true
+			return nil, errors.New("file does not exist")
+		} else {
+			logrus.Println("error GetFile/Stat: ", err)
+			return nil, err
+		}
+	}
+
+	dataFile, err := os.ReadFile(filename)
+	if err != nil {
+		logrus.Println("error GetFile/ReadFile: ", err)
+		return nil, err
+	}
+
+	return &api.File{Data: dataFile}, nil
 }

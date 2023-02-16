@@ -63,7 +63,8 @@ func main() {
 			}
 
 			fileSend := &api.File{
-				Data: dataSend,
+				Data:     dataSend,
+				Filename: fileName,
 			}
 
 			_, err = client.SendFile(context.Background(), fileSend)
