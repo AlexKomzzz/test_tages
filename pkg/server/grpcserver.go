@@ -62,11 +62,10 @@ func (s *GRPCserver) saveFile(dataFile []byte, fileName string, chErr chan<- err
 
 	// проверка существования файла на сервере
 	if ok, err := checkFile(fileName); ok && err != nil { // ошибка при проверке
-		// обработать ошибку
 		chErr <- err
 		return
 	} else if !ok && err != nil { // такого файла еще нет на сервере
-		// записать время создания файла
+		// запись времеми создания файла
 		s.setBtime[fileName] = time.Now().Format("2006-01-02 15:04:05")
 	}
 
@@ -110,6 +109,7 @@ func (s *GRPCserver) getList(chRes chan<- []string, chErr chan<- error) {
 
 	result := make([]string, 0)
 
+	// получение данных о файлах в директории
 	files, err := os.ReadDir(fileDir)
 	if err != nil {
 		logrus.Println("error GetListFiles/ReadDir: ", err)
@@ -117,6 +117,7 @@ func (s *GRPCserver) getList(chRes chan<- []string, chErr chan<- error) {
 		return
 	}
 
+	// если файлов нет
 	if len(files) == 0 {
 		chErr <- errors.New("files not found")
 		return
@@ -148,6 +149,7 @@ func (s *GRPCserver) getList(chRes chan<- []string, chErr chan<- error) {
 	chRes <- result
 }
 
+// отправка файла по имени
 func (s *GRPCserver) GetFile(ctx context.Context, fileName *api.Req) (*api.File, error) {
 
 	// для ограничения подключений реализовать счетчик работающих горутин на передачу файлов
@@ -192,8 +194,6 @@ func getFile(chRes chan<- []byte, fileName string, chErr chan<- error) {
 		chErr <- err
 		return
 	}
-
-	// time.Sleep(time.Second * 10) // для отладки
 
 	chRes <- dataFile
 }
