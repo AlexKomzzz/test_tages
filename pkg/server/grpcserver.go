@@ -15,7 +15,7 @@ import (
 const (
 	fileDir = "./pkg/server/srvDir/"
 	limUp   = 10
-	limDown = 2
+	limDown = 10
 	limView = 100
 )
 
@@ -24,6 +24,7 @@ type GRPCserver struct {
 	limUpFile   chan struct{} // семафор на ограничение загрузки файлов
 	limDownFile chan struct{} // семафор на ограничение скачиваний файлов
 	limViewFile chan struct{} // семафор на ограничение просмотра списка файлов
+	chErr       chan error
 }
 
 func NewGRPCServer() *GRPCserver {
@@ -31,6 +32,7 @@ func NewGRPCServer() *GRPCserver {
 		limUpFile:   make(chan struct{}, limUp),
 		limDownFile: make(chan struct{}, limDown),
 		limViewFile: make(chan struct{}, limView),
+		chErr:       make(chan error),
 	}
 }
 
@@ -38,37 +40,73 @@ func NewGRPCServer() *GRPCserver {
 func (s *GRPCserver) SendFile(ctx context.Context, fileData *api.File) (*empty.Empty, error) {
 	fileName := fmt.Sprintf("%s%s", fileDir, fileData.Filename)
 
+	s.limUpFile <- struct{}{}
+
+	go saveFile(fileData.Data, fileName, s.chErr)
+	defer func() {
+		<-s.limUpFile // или будет лучше делать в горутине?
+	}()
+
+	select {
+	case err := <-s.chErr:
+		return nil, err
+	default:
+		var res empty.Empty
+		return &res, nil
+	}
+}
+
+func saveFile(dataFile []byte, fileName string, chErr chan<- error) {
 	file, err := os.Create(fileName)
 	if err != nil {
 		logrus.Println("error SendFile/Create: ", err)
-		return nil, err
+		chErr <- err
+		return
 	}
 
 	defer file.Close()
 
 	// сохраняем полученный файл в директории
-	_, err = file.Write(fileData.Data)
+	_, err = file.Write(dataFile)
 	// err := os.WriteFile(fmt.Sprintf("%s%s", fileDir, fileData.Filename), fileData.Data, 0)
 	if err != nil {
 		logrus.Println("error SendFile/Write: ", err)
-		return nil, err
+		chErr <- err
+		return
 	}
-	var res empty.Empty
-	return &res, nil
 }
 
 // Отправка списка файлов
 func (s *GRPCserver) GetListFiles(ctx context.Context, empty *empty.Empty) (*api.ListFiles, error) {
+
+	s.limViewFile <- struct{}{}
+
+	chRes := make(chan []string)
+
+	go getList(chRes, s.chErr)
+	defer func() {
+		<-s.limViewFile // или будет лучше делать в горутине?
+	}()
+
+	result := <-chRes
+
+	return &api.ListFiles{Files: result}, nil
+}
+
+func getList(chRes chan<- []string, chErr chan<- error) {
+
 	result := make([]string, 0)
 
 	files, err := os.ReadDir(fileDir)
 	if err != nil {
 		logrus.Println("error GetListFiles/ReadDir: ", err)
-		return nil, err
+		chErr <- err
+		return
 	}
 
 	if len(files) == 0 {
-		return nil, errors.New("files not found")
+		chErr <- errors.New("files not found")
+		return
 	}
 
 	for _, file := range files {
@@ -77,7 +115,8 @@ func (s *GRPCserver) GetListFiles(ctx context.Context, empty *empty.Empty) (*api
 		t, err := times.Stat(fmt.Sprintf("%s%s", fileDir, file.Name()))
 		if err != nil {
 			logrus.Println("error GetListFiles/times.Stat: ", err)
-			return nil, err
+			chErr <- err
+			return
 		}
 		if !t.HasBirthTime() {
 			logrus.Println("отсутствует время создания файла")
@@ -92,7 +131,7 @@ func (s *GRPCserver) GetListFiles(ctx context.Context, empty *empty.Empty) (*api
 		}
 	}
 
-	return &api.ListFiles{Files: result}, nil
+	chRes <- result
 }
 
 func (s *GRPCserver) GetFile(ctx context.Context, fileName *api.Req) (*api.File, error) {
@@ -108,20 +147,19 @@ func (s *GRPCserver) GetFile(ctx context.Context, fileName *api.Req) (*api.File,
 	filename := fmt.Sprintf("%s%s", fileDir, fileName.Filename)
 
 	chRes := make(chan []byte)
-	chErr := make(chan error)
 
-	s.limDownFile <- struct{}{}                         // блокирует, если уже запущено 10 горутин
-	logrus.Println("len semafor: ", len(s.limDownFile)) // тестовая
+	s.limDownFile <- struct{}{} // блокирует, если уже запущено 10 горутин
+	// logrus.Println("len semafor: ", len(s.limDownFile)) // тестовая
 
-	go getFile(chRes, filename, chErr)
+	go getFile(chRes, filename, s.chErr)
 	defer func() {
-		<-s.limDownFile
+		<-s.limDownFile // или будет лучше делать в горутине?
 	}()
 
 	select {
 	case dataFile := <-chRes:
 		return &api.File{Data: dataFile}, nil
-	case err := <-chErr:
+	case err := <-s.chErr:
 		return nil, err
 	}
 }

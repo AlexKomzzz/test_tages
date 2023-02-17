@@ -135,6 +135,10 @@ func main() {
 
 			newFile.Close()
 			fmt.Println("file received!")
+
+		default:
+			fmt.Println("unknown command! Wait: 'send' 'list files' 'get'")
+			continue
 		}
 
 	}
