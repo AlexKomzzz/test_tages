@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -53,9 +54,15 @@ func (c *Client) createReq() bool {
 func (c *Client) sendFile() bool {
 	// считать название файла
 	fileName := createFName(c.req)
+	fNameFull := fmt.Sprintf("%s%s", clDir, fileName)
+
+	err := checkFile(fNameFull)
+	if err != nil {
+		return false
+	}
 
 	// читать данные их файла клиентской директории
-	dataSend, err := os.ReadFile(fmt.Sprintf("%s%s", clDir, fileName))
+	dataSend, err := os.ReadFile(fNameFull)
 	if err != nil {
 		fmt.Println("error: ", err)
 		return false
@@ -126,6 +133,23 @@ func (c *Client) getFile() bool {
 	fmt.Println("file received!")
 
 	return true
+}
+
+// проверка наличия файла на сервере
+func checkFile(fileName string) error {
+
+	_, err := os.Stat(fileName)
+	if err != nil {
+		if os.IsNotExist(err) {
+			fmt.Println("file does not exist") // это_true
+			return errors.New("file does not exist")
+		} else {
+			fmt.Println("error GetFile/Stat: ", err)
+			return err
+		}
+	}
+
+	return nil
 }
 
 func createFName(request []string) (fileName string) {

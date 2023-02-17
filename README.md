@@ -30,7 +30,7 @@
 
 Запустить клиент:
 
-        $ go run ./cmd/client/main.go
+        $ go run ./cmd/client/*.go
 
 ### Работа с клиентом
 

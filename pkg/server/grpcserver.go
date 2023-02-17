@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/AlexKomzzz/test_tages/pkg/api"
-	"github.com/djherbis/times"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/sirupsen/logrus"
 )
@@ -25,6 +25,7 @@ type GRPCserver struct {
 	limDownFile chan struct{} // семафор на ограничение скачиваний файлов
 	limViewFile chan struct{} // семафор на ограничение просмотра списка файлов
 	chErr       chan error
+	setBtime    map[string]string // мапа для хранения времени создания файлов
 }
 
 func NewGRPCServer() *GRPCserver {
@@ -33,6 +34,7 @@ func NewGRPCServer() *GRPCserver {
 		limDownFile: make(chan struct{}, limDown),
 		limViewFile: make(chan struct{}, limView),
 		chErr:       make(chan error),
+		setBtime:    make(map[string]string),
 	}
 }
 
@@ -42,7 +44,7 @@ func (s *GRPCserver) SendFile(ctx context.Context, fileData *api.File) (*empty.E
 
 	s.limUpFile <- struct{}{}
 
-	go saveFile(fileData.Data, fileName, s.chErr)
+	go s.saveFile(fileData.Data, fileName, s.chErr)
 	defer func() {
 		<-s.limUpFile // или будет лучше делать в горутине?
 	}()
@@ -56,7 +58,18 @@ func (s *GRPCserver) SendFile(ctx context.Context, fileData *api.File) (*empty.E
 	}
 }
 
-func saveFile(dataFile []byte, fileName string, chErr chan<- error) {
+func (s *GRPCserver) saveFile(dataFile []byte, fileName string, chErr chan<- error) {
+
+	// проверка существования файла на сервере
+	if ok, err := checkFile(fileName); ok && err != nil { // ошибка при проверке
+		// обработать ошибку
+		chErr <- err
+		return
+	} else if !ok && err != nil { // такого файла еще нет на сервере
+		// записать время создания файла
+		s.setBtime[fileName] = time.Now().Format("2006-01-02 15:04:05")
+	}
+
 	file, err := os.Create(fileName)
 	if err != nil {
 		logrus.Println("error SendFile/Create: ", err)
@@ -83,7 +96,7 @@ func (s *GRPCserver) GetListFiles(ctx context.Context, empty *empty.Empty) (*api
 
 	chRes := make(chan []string)
 
-	go getList(chRes, s.chErr)
+	go s.getList(chRes, s.chErr)
 	defer func() {
 		<-s.limViewFile // или будет лучше делать в горутине?
 	}()
@@ -93,7 +106,7 @@ func (s *GRPCserver) GetListFiles(ctx context.Context, empty *empty.Empty) (*api
 	return &api.ListFiles{Files: result}, nil
 }
 
-func getList(chRes chan<- []string, chErr chan<- error) {
+func (s *GRPCserver) getList(chRes chan<- []string, chErr chan<- error) {
 
 	result := make([]string, 0)
 
@@ -111,24 +124,25 @@ func getList(chRes chan<- []string, chErr chan<- error) {
 
 	for _, file := range files {
 
-		// время создания и изменения файла
-		t, err := times.Stat(fmt.Sprintf("%s%s", fileDir, file.Name()))
+		fileName := fmt.Sprintf("%s%s", fileDir, file.Name())
+
+		// время создания файла
+		btime, ok := s.setBtime[fileName]
+		if !ok {
+			btime = "empty"
+		}
+
+		// время изменения можно получить из fileInfo
+		fInf, err := file.Info()
 		if err != nil {
-			logrus.Println("error GetListFiles/times.Stat: ", err)
+			logrus.Println("error GetListFiles/file.Info: ", err)
 			chErr <- err
 			return
 		}
-		if !t.HasBirthTime() {
-			logrus.Println("отсутствует время создания файла")
-			infoFile := fmt.Sprintf("%s | %v | %v", file.Name(), "NULL", t.ModTime().Format("2006-01-02 15:04:05"))
-			result = append(result, infoFile)
-		} else {
 
-			// время изменения можно получить из fileInfo
+		infoFile := fmt.Sprintf("%s | %v | %v", file.Name(), btime, fInf.ModTime().Format("2006-01-02 15:04:05"))
+		result = append(result, infoFile)
 
-			infoFile := fmt.Sprintf("%s | %v | %v", file.Name(), t.BirthTime(), t.ModTime().Format("2006-01-02 15:04:05"))
-			result = append(result, infoFile)
-		}
 	}
 
 	chRes <- result
@@ -164,22 +178,15 @@ func (s *GRPCserver) GetFile(ctx context.Context, fileName *api.Req) (*api.File,
 	}
 }
 
-func getFile(chRes chan<- []byte, filename string, chErr chan<- error) {
+func getFile(chRes chan<- []byte, fileName string, chErr chan<- error) {
 
-	_, err := os.Stat(filename)
+	// проверка наличия файла на сервере
+	_, err := checkFile(fileName)
 	if err != nil {
-		if os.IsNotExist(err) {
-			logrus.Println("file does not exist") // это_true
-			chErr <- errors.New("file does not exist")
-			return
-		} else {
-			logrus.Println("error GetFile/Stat: ", err)
-			chErr <- err
-			return
-		}
+		chErr <- err
 	}
 
-	dataFile, err := os.ReadFile(filename)
+	dataFile, err := os.ReadFile(fileName)
 	if err != nil {
 		logrus.Println("error GetFile/ReadFile: ", err)
 		chErr <- err
@@ -189,4 +196,20 @@ func getFile(chRes chan<- []byte, filename string, chErr chan<- error) {
 	// time.Sleep(time.Second * 10) // для отладки
 
 	chRes <- dataFile
+}
+
+// проверка наличия файла на сервере
+func checkFile(fileName string) (bool, error) {
+	_, err := os.Stat(fileName)
+	if err != nil {
+		if os.IsNotExist(err) {
+			logrus.Println("file does not exist") // это_true
+			return false, errors.New("file does not exist")
+		} else {
+			logrus.Println("error GetFile/Stat: ", err)
+			return true, err
+		}
+	}
+
+	return true, nil
 }
