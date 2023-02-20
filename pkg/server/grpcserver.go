@@ -42,9 +42,12 @@ func NewGRPCServer() *GRPCserver {
 func (s *GRPCserver) SendFile(ctx context.Context, fileData *api.File) (*empty.Empty, error) {
 	fileName := fmt.Sprintf("%s%s", fileDir, fileData.Filename)
 
+	// канал для блокировки текущей функции для ожидания выполнения горутины
+	chOk := make(chan struct{})
+
 	s.limUpFile <- struct{}{}
 
-	go s.saveFile(fileData.Data, fileName, s.chErr)
+	go s.saveFile(fileData.Data, fileName, chOk)
 	defer func() {
 		<-s.limUpFile // или будет лучше делать в горутине?
 	}()
@@ -52,17 +55,20 @@ func (s *GRPCserver) SendFile(ctx context.Context, fileData *api.File) (*empty.E
 	select {
 	case err := <-s.chErr:
 		return nil, err
-	default:
+	case <-chOk:
 		var res empty.Empty
 		return &res, nil
 	}
 }
 
-func (s *GRPCserver) saveFile(dataFile []byte, fileName string, chErr chan<- error) {
+func (s *GRPCserver) saveFile(dataFile []byte, fileName string, chOk chan<- struct{}) {
+	defer func() { // сигнал о завершении текущей горутины
+		chOk <- struct{}{}
+	}()
 
 	// проверка существования файла на сервере
 	if ok, err := checkFile(fileName); ok && err != nil { // ошибка при проверке
-		chErr <- err
+		s.chErr <- err
 		return
 	} else if !ok && err != nil { // такого файла еще нет на сервере
 		// запись времеми создания файла
@@ -72,7 +78,7 @@ func (s *GRPCserver) saveFile(dataFile []byte, fileName string, chErr chan<- err
 	file, err := os.Create(fileName)
 	if err != nil {
 		logrus.Println("error SendFile/Create: ", err)
-		chErr <- err
+		s.chErr <- err
 		return
 	}
 
@@ -83,7 +89,7 @@ func (s *GRPCserver) saveFile(dataFile []byte, fileName string, chErr chan<- err
 	// err := os.WriteFile(fmt.Sprintf("%s%s", fileDir, fileData.Filename), fileData.Data, 0)
 	if err != nil {
 		logrus.Println("error SendFile/Write: ", err)
-		chErr <- err
+		s.chErr <- err
 		return
 	}
 }
@@ -95,7 +101,7 @@ func (s *GRPCserver) GetListFiles(ctx context.Context, empty *empty.Empty) (*api
 
 	chRes := make(chan []string)
 
-	go s.getList(chRes, s.chErr)
+	go s.getList(chRes)
 	defer func() {
 		<-s.limViewFile // или будет лучше делать в горутине?
 	}()
@@ -105,7 +111,7 @@ func (s *GRPCserver) GetListFiles(ctx context.Context, empty *empty.Empty) (*api
 	return &api.ListFiles{Files: result}, nil
 }
 
-func (s *GRPCserver) getList(chRes chan<- []string, chErr chan<- error) {
+func (s *GRPCserver) getList(chRes chan<- []string) {
 
 	result := make([]string, 0)
 
@@ -113,13 +119,13 @@ func (s *GRPCserver) getList(chRes chan<- []string, chErr chan<- error) {
 	files, err := os.ReadDir(fileDir)
 	if err != nil {
 		logrus.Println("error GetListFiles/ReadDir: ", err)
-		chErr <- err
+		s.chErr <- err
 		return
 	}
 
 	// если файлов нет
 	if len(files) == 0 {
-		chErr <- errors.New("files not found")
+		s.chErr <- errors.New("files not found")
 		return
 	}
 
@@ -137,7 +143,7 @@ func (s *GRPCserver) getList(chRes chan<- []string, chErr chan<- error) {
 		fInf, err := file.Info()
 		if err != nil {
 			logrus.Println("error GetListFiles/file.Info: ", err)
-			chErr <- err
+			s.chErr <- err
 			return
 		}
 
@@ -167,7 +173,7 @@ func (s *GRPCserver) GetFile(ctx context.Context, fileName *api.Req) (*api.File,
 	s.limDownFile <- struct{}{} // блокирует, если уже запущено 10 горутин
 	// logrus.Println("len semafor: ", len(s.limDownFile)) // тестовая
 
-	go getFile(chRes, filename, s.chErr)
+	go s.getFile(chRes, filename)
 	defer func() {
 		<-s.limDownFile // или будет лучше делать в горутине?
 	}()
@@ -180,18 +186,18 @@ func (s *GRPCserver) GetFile(ctx context.Context, fileName *api.Req) (*api.File,
 	}
 }
 
-func getFile(chRes chan<- []byte, fileName string, chErr chan<- error) {
+func (s *GRPCserver) getFile(chRes chan<- []byte, fileName string) {
 
 	// проверка наличия файла на сервере
 	_, err := checkFile(fileName)
 	if err != nil {
-		chErr <- err
+		s.chErr <- err
 	}
 
 	dataFile, err := os.ReadFile(fileName)
 	if err != nil {
 		logrus.Println("error GetFile/ReadFile: ", err)
-		chErr <- err
+		s.chErr <- err
 		return
 	}
 
